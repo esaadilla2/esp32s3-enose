@@ -1,0 +1,75 @@
+[package]
+edition      = "2024"
+name         = "esp32s3-test"
+rust-version = "1.88"
+version      = "0.1.0"
+
+[[bin]]
+name = "esp32s3-test"
+path = "./src/bin/main.rs"
+
+[dependencies]
+esp-hal = { version = "~1.1.0", features = ["esp32s3", "unstable"] }
+
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32s3"] }
+
+embedded-hal = "1.0"
+
+critical-section = "1.2.0"
+
+esp-println = { version = "0.17.0", features = ["esp32s3"] }
+
+esp-radio = {
+    version = "0.18.0",
+    default-features = false,
+    features = ["esp32s3", "wifi", "unstable", "esp-alloc"]
+}
+
+esp-rtos = {
+    version = "0.3.0",
+    default-features = false,
+    features = ["esp32s3", "esp-radio", "esp-alloc", "embassy"]
+}
+
+esp-alloc = {
+    version = "0.10.0",
+    default-features = false,
+    features = ["compat", "global-allocator"]
+}
+
+embassy-executor = "0.10"
+
+embassy-net = {
+    version = "0.9",
+    features = ["dhcpv4", "medium-ethernet", "tcp", "dns"]
+}
+
+embassy-time = "0.5"
+
+static_cell = "2.1"
+heapless = "0.9"
+
+# ===== STEP 5A: MQTT (ditambahkan, tidak ada versi existing yang diubah) =====
+
+# embassy-sync: dibutuhkan untuk Channel<...> sebagai jalur komunikasi
+# acquisition_task -> mqtt_task (sesuai arsitektur 3-task yang diminta).
+embassy-sync = "0.8"
+
+# embassy-mqtt-lite: client MQTT v3.1.1 minimal, no_std, QoS 0 fire-and-forget,
+# TANPA autentikasi (persis kebutuhan STEP 5A). Dependency-nya sendiri hanya
+# embedded-io-async ^0.7 (transitif, tidak perlu dideklarasikan manual di sini
+# karena kode kita tidak memanggil API embedded-io-async secara langsung).
+# TIDAK memakai allocator, sehingga tidak berisiko konflik dengan allocator-api2.
+embassy-mqtt-lite = "0.3"
+
+[profile.dev]
+opt-level = "s"
+
+[profile.dev.package.esp-radio]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+debug = 2
+lto = "fat"
+opt-level = "s"
