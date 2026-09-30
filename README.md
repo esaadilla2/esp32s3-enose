@@ -45,7 +45,7 @@ src/
 
 Dokumentasi lengkap mengenai perkembangan implementasi dan pengujian proyek dapat dilihat pada:
 
-**[Laporan Progress ↗](./docs/laporan-progress.pdf)**
+**[Laporan Progress ↗](https://drive.google.com/file/d/1faPqN9mEQJcEoNNcXS-VtY8iLRyIR7xJ/view?usp=sharing)**
 
 ## Development
 
