@@ -8,10 +8,16 @@ version      = "0.1.0"
 name = "esp32s3-test"
 path = "./src/bin/main.rs"
 
+[[bin]]
+name = "test_suite"
+path = "./src/bin/test_suite.rs"
+
 [dependencies]
 esp-hal = { version = "~1.1.0", features = ["esp32s3", "unstable"] }
 
 esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32s3"] }
+
+esp-storage = { version = "0.9.0", features = ["esp32s3"] }
 
 embedded-hal = "1.0"
 

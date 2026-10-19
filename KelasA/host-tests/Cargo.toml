@@ -1,0 +1,18 @@
+# Crate TERPISAH untuk menguji src/tinyml/* di HOST (PC), tanpa ESP32.
+# Menyertakan source firmware yang SAMA lewat #[path] -- tidak ada salinan.
+# [workspace] kosong = bukan bagian dari project firmware (tidak ikut Cargo.lock-nya).
+#
+# Jalankan dari folder host-tests/ (override toolchain/target esp dari project):
+#   cargo +stable test --target <HOST_TRIPLE>
+# HOST_TRIPLE: lihat `rustc +stable -vV` baris "host:" (mis. x86_64-pc-windows-msvc)
+[package]
+name = "tinyml-host-tests"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

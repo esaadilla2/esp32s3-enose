@@ -53,19 +53,42 @@ const CFG_MUX_AIN1: u16 = 0b101 << 12;
 const CFG_MUX_AIN2: u16 = 0b110 << 12;
 const CFG_MUX_AIN3: u16 = 0b111 << 12;
 
-/// PGA (bit 11:9) = 001 -> full-scale range +-4.096 V.
-///
-/// ASUMSI: dipilih sebagai default yang aman untuk sinyal analog umum di
-/// sekitar rentang VDD ESP32 (3.3V) dengan sedikit headroom, TANPA
-/// mengetahui rangkaian pembagi tegangan/level-shifting yang sebenarnya
-/// dipakai di hardware Anda untuk menurunkan sinyal 0-5V sensor gas.
-/// Kalau pembagi tegangan Anda menghasilkan rentang yang berbeda, PGA ini
-/// (dan `PGA_FULL_SCALE_VOLTS` di bawah) HARUS disesuaikan supaya
-/// `raw_to_voltage` akurat.
-const CFG_PGA_4_096V: u16 = 0b001 << 9;
-/// Full-scale voltage yang berpasangan dengan `CFG_PGA_4_096V` di atas.
-/// Dipakai oleh `raw_to_voltage`. HARUS diubah bersamaan kalau PGA diubah.
-const PGA_FULL_SCALE_VOLTS: f32 = 4.096;
+/// Pengaturan Programmable Gain Amplifier (PGA) ADS1115 (bit 11:9 Config Register).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pga {
+    /// FSR +-6.144 V (bit 11:9 = 000). Resolusi nominal = 6.144 / 32768 ~ 0.1875 mV/bit.
+    /// Dicantumkan dalam dokumen pemetaan hardware jika ADS1115 ditenagai VDD = 5V.
+    /// PERINGATAN: Sesuai datasheet Section 7.1, tegangan analog input TIDAK BOLEH
+    /// melebihi VDD + 0.3V meskipun FSR disetel ke +-6.144V!
+    Fsr6_144V,
+    /// FSR +-4.096 V (bit 11:9 = 001). Resolusi nominal = 4.096 / 32768 = 0.1250 mV/bit.
+    /// Pilihan default yang aman untuk rentang sinyal <= 3.3V / <= 4.096V.
+    Fsr4_096V,
+}
+
+impl Pga {
+    pub const fn config_bits(self) -> u16 {
+        match self {
+            Pga::Fsr6_144V => 0b000 << 9,
+            Pga::Fsr4_096V => 0b001 << 9,
+        }
+    }
+
+    pub const fn full_scale_volts(self) -> f32 {
+        match self {
+            Pga::Fsr6_144V => 6.144,
+            Pga::Fsr4_096V => 4.096,
+        }
+    }
+
+    pub fn raw_to_voltage(self, raw: i16) -> f32 {
+        (raw as f32) * (self.full_scale_volts() / 32768.0)
+    }
+}
+
+/// PGA default saat ini: +-4.096V (dapat diubah ke Fsr6_144V via with_pga()
+/// setelah konfigurasi VDD dan pembagi tegangan hardware dikonfirmasi).
+pub const DEFAULT_PGA: Pga = Pga::Fsr4_096V;
 
 /// MODE (bit 8) = 1 -> single-shot (sesuai instruksi, bukan continuous).
 const CFG_MODE_SINGLE_SHOT: u16 = 1 << 8;
@@ -87,7 +110,18 @@ const CFG_COMP_QUE_DISABLE: u16 = 0b11;
 /// sebelum dianggap timeout. Tidak memakai delay tambahan (tidak ada
 /// dependency Delay di driver ini) -- setiap iterasi polling sudah makan
 /// waktu nyata karena berupa transaksi I2C sungguhan.
-const MAX_POLL_ATTEMPTS: u8 = 20;
+///
+/// ANALISIS TIMING: Pada 128 SPS, konversi internal ADS1115 memakan waktu ~7,81 ms
+/// (dapat mencapai ~8,6 ms dengan toleransi osilator internal +-10%).
+/// Transaksi I2C polling membaca 2 byte status:
+/// - Pada 100 kHz: ~0,29 ms per poll -> 20 poll hanya ~5,8 ms (TIMEOUT PREMATUR!).
+///   Dengan 150 poll (~43,5 ms budget timeout), conversion siap di poll ~27 (~7,8 ms).
+/// - Pada 400 kHz: ~0,08 ms per poll -> 20 poll hanya ~1,6 ms (TIMEOUT PREMATUR!).
+///   Dengan 150 poll (~12 ms budget timeout), conversion siap di poll ~98 (~7,8 ms).
+///
+/// Begitu bit OS siap (conversion-ready), loop langsung break, sehingga saat normal
+/// hanya memakan ~7,8 ms per kanal.
+const MAX_POLL_ATTEMPTS: u8 = 150;
 
 // ============================================================================
 // TIPE PUBLIK
@@ -163,14 +197,24 @@ impl<E> From<E> for Ads1115Error<E> {
 /// TIDAK menyimpan bus I2C -- lihat catatan desain di atas file ini.
 pub struct Ads1115 {
     address: u8,
+    pga: Pga,
 }
 
 impl Ads1115 {
     /// Buat instance untuk satu ADS1115 pada alamat I2C tertentu
-    /// (mis. 0x48 atau 0x49). Tidak melakukan transaksi I2C apa pun --
-    /// murni menyimpan alamat.
+    /// (mis. 0x48 atau 0x49) dengan PGA default (DEFAULT_PGA = +-4.096V).
+    /// Tidak melakukan transaksi I2C apa pun -- murni menyimpan alamat dan konfigurasi.
     pub fn new(address: u8) -> Self {
-        Self { address }
+        Self {
+            address,
+            pga: DEFAULT_PGA,
+        }
+    }
+
+    /// Pasang pengaturan PGA khusus (mis. Pga::Fsr6_144V jika ditenagai 5V).
+    pub fn with_pga(mut self, pga: Pga) -> Self {
+        self.pga = pga;
+        self
     }
 
     /// Alamat I2C instance ini.
@@ -178,12 +222,17 @@ impl Ads1115 {
         self.address
     }
 
+    /// Pengaturan PGA instance ini.
+    pub fn pga(&self) -> Pga {
+        self.pga
+    }
+
     /// Baca satu channel, kembalikan raw ADC 16-bit signed (i16).
     ///
-    /// Langkah (sesuai urutan yang Anda minta):
-    /// 1. tulis Config register (OS=start, MUX=channel, PGA, MODE=single-shot, DR, comparator off)
-    /// 2. polling Config register sampai bit OS kembali 1 (conversion selesai) atau timeout
-    /// 3. baca Conversion register, kembalikan sebagai i16
+    /// Langkah:
+    /// 1. Tulis Config register (OS=start, MUX=channel, PGA, MODE=single-shot, DR, comparator off)
+    /// 2. Polling Config register sampai bit OS kembali 1 (conversion selesai) atau timeout
+    /// 3. Baca Conversion register, kembalikan sebagai i16
     pub fn read_channel_raw<I2C>(
         &self,
         i2c: &mut I2C,
@@ -194,13 +243,16 @@ impl Ads1115 {
     {
         let config: u16 = CFG_OS_START_SINGLE
             | channel.mux_bits()
-            | CFG_PGA_4_096V
+            | self.pga.config_bits()
             | CFG_MODE_SINGLE_SHOT
             | CFG_DR_128SPS
             | CFG_COMP_QUE_DISABLE;
 
         let config_bytes = config.to_be_bytes();
-        i2c.write(self.address, &[REG_CONFIG, config_bytes[0], config_bytes[1]])?;
+        i2c.write(
+            self.address,
+            &[REG_CONFIG, config_bytes[0], config_bytes[1]],
+        )?;
 
         // Polling Config register: pointer sudah menunjuk REG_CONFIG dari
         // penulisan di atas, jadi cukup `read` langsung (tanpa menulis
@@ -227,8 +279,7 @@ impl Ads1115 {
     }
 
     /// Sama seperti `read_channel_raw`, tapi langsung dikonversi ke Volt
-    /// menggunakan `PGA_FULL_SCALE_VOLTS` yang sesuai dengan PGA yang
-    /// dipakai `read_channel_raw`.
+    /// menggunakan FSR dari PGA instance ini.
     pub fn read_channel_voltage<I2C>(
         &self,
         i2c: &mut I2C,
@@ -238,7 +289,7 @@ impl Ads1115 {
         I2C: I2c,
     {
         let raw = self.read_channel_raw(i2c, channel)?;
-        Ok(raw_to_voltage(raw))
+        Ok(self.pga.raw_to_voltage(raw))
     }
 
     /// Baca AIN0..AIN3 satu ADS1115 ini secara berurutan (4 kali single-shot
@@ -257,8 +308,7 @@ impl Ads1115 {
 
     /// Baca satu channel berdasarkan indeks 0..3 (bukan `Channel` enum) --
     /// mengembalikan `Ads1115Error::InvalidChannel` untuk indeks di luar
-    /// itu. Disediakan untuk pemanggil yang bekerja dengan indeks numerik
-    /// (mis. loop 0..8 di acquisition layer nanti).
+    /// itu.
     pub fn read_channel_index_voltage<I2C>(
         &self,
         i2c: &mut I2C,
@@ -272,11 +322,16 @@ impl Ads1115 {
     }
 }
 
-/// Konversi raw ADC 16-bit (signed) ke Volt, memakai full-scale range PGA
-/// yang dipakai `read_channel_raw` (`PGA_FULL_SCALE_VOLTS`).
+/// Konversi raw ADC 16-bit (signed) ke Volt berdasarkan PGA tertentu.
+pub fn raw_to_voltage_pga(raw: i16, pga: Pga) -> f32 {
+    pga.raw_to_voltage(raw)
+}
+
+/// Konversi raw ADC 16-bit (signed) ke Volt, memakai full-scale range PGA default
+/// (`DEFAULT_PGA` = +-4.096V).
 ///
 /// TIDAK melakukan konversi ke ppm atau satuan konsentrasi gas apa pun --
 /// hanya tegangan hasil ADC apa adanya.
 pub fn raw_to_voltage(raw: i16) -> f32 {
-    (raw as f32) * (PGA_FULL_SCALE_VOLTS / 32768.0)
+    DEFAULT_PGA.raw_to_voltage(raw)
 }

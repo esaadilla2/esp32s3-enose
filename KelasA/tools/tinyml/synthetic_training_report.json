@@ -1,0 +1,35 @@
+{
+  "kind": "synthetic_fixture",
+  "version": "synth-fx-1",
+  "feature_spec": "fv1-8gas7-env2",
+  "classes": [
+    "synth_a",
+    "synth_b",
+    "synth_c"
+  ],
+  "n_sessions": 36,
+  "n_train": 24,
+  "n_test": 12,
+  "skipped_sessions": [],
+  "constant_features": [],
+  "train_accuracy": 1.0,
+  "test_accuracy": 1.0,
+  "test_confusion_matrix": [
+    [
+      4,
+      0,
+      0
+    ],
+    [
+      0,
+      4,
+      0
+    ],
+    [
+      0,
+      0,
+      4
+    ]
+  ],
+  "warning": "DATA SINTETIK -- metrik hanya memverifikasi pipeline, BUKAN akurasi aroma kopi."
+}

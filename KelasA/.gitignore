@@ -1,7 +1,7 @@
 # will have compiled files and executables
 debug/
 target/
-/KelasA/src/config.rs/
+/src/config.rs/
 
 # Editor configuration
 .vscode/
