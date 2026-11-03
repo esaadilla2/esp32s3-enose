@@ -68,6 +68,9 @@ use esp32s3_test::tinyml::telemetry::write_ml_json;
 use esp32s3_test::drivers::dht22::Dht22;
 use esp32s3_test::ota::{OtaDevice, Outcome};
 
+use esp_storage::FlashStorage;
+use esp32s3_test::provisioning::load_credentials;
+
 use heapless::String as HString;
 use static_cell::StaticCell;
 use alloc::string::ToString;
@@ -197,6 +200,21 @@ async fn main(spawner: Spawner) {
     // 2. HEAP ALLOCATOR
     esp_alloc::heap_allocator!(size: 72 * 1024);
 
+   // 2A. FLASH STORAGE + NVS WIFI CREDENTIALS
+   // FLASH dibuat satu kali dan dipakai bersama untuk NVS dan OTA.
+   let mut flash_storage = FlashStorage::new(peripherals.FLASH);
+
+   let saved_credentials = load_credentials(&mut flash_storage);
+
+   match &saved_credentials {
+    Some((ssid, _)) => {
+        println!("NVS: kredensial Wi-Fi ditemukan untuk SSID: {}", ssid.as_str());
+    }
+    None => {
+        println!("NVS: kredensial Wi-Fi tidak ditemukan. Menggunakan fallback.");
+    }
+}
+
     // 3. TIMER GROUP + 4. SOFTWARE INTERRUPT CONTROL
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     let sw_interrupt = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -229,50 +247,107 @@ async fn main(spawner: Spawner) {
     // 9. NET TASK
     spawner.spawn(net_task(runner).expect("Gagal membuat net_task"));
 
+    
     // 7. WIFI CREDENTIALS + MULTI-NETWORK FALLBACK
-    // Prioritas utama mengikuti urutan WIFI_NETWORKS di config.rs.
-    // Kredensial Wi-Fi diambil dari WIFI_NETWORKS pada config.rs.
-    // FLASH tidak dipakai di sini agar ownership peripherals.FLASH tetap
-    // tersedia untuk mqtt_task dan OtaDevice.
+    // Prioritas:
+    // 1. Kredensial dari NVS.
+    // 2. Daftar WIFI_NETWORKS dari config.rs.
+
     let mut connected_ssid: Option<HString<32>> = None;
 
-    // Percobaan awal: jaringan utama lalu seluruh jaringan cadangan.
-    for (index, &(ssid, password)) in WIFI_NETWORKS.iter().enumerate() {
-        println!("Percobaan Wi-Fi {}/{}", index + 1, WIFI_NETWORKS.len());
-        if try_wifi_network(&mut controller, ssid, password).await {
-            match HString::<32>::try_from(ssid) {
-                Ok(value) => {
-                    connected_ssid = Some(value);
-                    break;
-                }
-                Err(_) => println!("SSID melebihi kapasitas 32 karakter: {}", ssid),
-            }
+    // --------------------------------------------------------
+    // PRIORITAS 1: COBA KREDENSIAL DARI NVS
+    // --------------------------------------------------------
+    if let Some((saved_ssid, saved_password)) = saved_credentials.as_ref() {
+        println!("Mencoba Wi-Fi dari NVS...");
+
+        if try_wifi_network(
+            &mut controller,
+            saved_ssid.as_str(),
+            saved_password.as_str(),
+        )
+        .await
+        {
+            connected_ssid = Some(saved_ssid.clone());
+            println!("Wi-Fi NVS berhasil digunakan.");
+        } else {
+            println!("Wi-Fi NVS gagal. Beralih ke jaringan fallback.");
         }
     }
 
-    // Provisioning project saat ini masih STUB (belum ada AP/captive portal).
-    // Jika seluruh jaringan gagal, firmware mengulang daftar setiap 15 detik.
-    while connected_ssid.is_none() {
-        println!("Semua Wi-Fi gagal. Retry seluruh daftar dalam 15 detik...");
-        Timer::after(Duration::from_secs(15)).await;
-
+    // --------------------------------------------------------
+    // PRIORITAS 2: WIFI_NETWORKS DARI CONFIG.RS
+    // --------------------------------------------------------
+    if connected_ssid.is_none() {
         for (index, &(ssid, password)) in WIFI_NETWORKS.iter().enumerate() {
-            println!("Retry Wi-Fi {}/{}", index + 1, WIFI_NETWORKS.len());
+            println!(
+                "Fallback Wi-Fi {}/{}",
+                index + 1,
+                WIFI_NETWORKS.len()
+            );
+
             if try_wifi_network(&mut controller, ssid, password).await {
                 match HString::<32>::try_from(ssid) {
                     Ok(value) => {
                         connected_ssid = Some(value);
                         break;
                     }
-                    Err(_) => println!("SSID melebihi kapasitas 32 karakter: {}", ssid),
+                    Err(_) => {
+                        println!("SSID melebihi kapasitas 32 karakter.");
+                    }
                 }
             }
         }
-
     }
 
-    let wifi_ssid = connected_ssid.expect("Wi-Fi harus berhasil sebelum lanjut");
+    // --------------------------------------------------------
+    // RETRY JIKA SELURUH JARINGAN GAGAL
+    // --------------------------------------------------------
+    while connected_ssid.is_none() {
+        println!("Semua Wi-Fi gagal. Retry dalam 15 detik...");
+        Timer::after(Duration::from_secs(15)).await;
+
+        // Coba kembali NVS.
+        if let Some((saved_ssid, saved_password)) = saved_credentials.as_ref() {
+            if try_wifi_network(
+                &mut controller,
+                saved_ssid.as_str(),
+                saved_password.as_str(),
+            )
+            .await
+            {
+                connected_ssid = Some(saved_ssid.clone());
+                continue;
+            }
+        }
+
+        // Coba kembali seluruh jaringan fallback.
+        for (index, &(ssid, password)) in WIFI_NETWORKS.iter().enumerate() {
+            println!(
+                "Retry fallback Wi-Fi {}/{}",
+                index + 1,
+                WIFI_NETWORKS.len()
+            );
+
+            if try_wifi_network(&mut controller, ssid, password).await {
+                match HString::<32>::try_from(ssid) {
+                    Ok(value) => {
+                        connected_ssid = Some(value);
+                        break;
+                    }
+                    Err(_) => {
+                        println!("SSID melebihi kapasitas 32 karakter.");
+                    }
+                }
+            }
+        }
+    }
+
+    let wifi_ssid =
+        connected_ssid.expect("Wi-Fi harus berhasil sebelum lanjut");
+
     println!("Wi-Fi connected: {}", wifi_ssid.as_str());
+
 
     // 11. DHCP
     println!("Menunggu DHCP...");
@@ -285,7 +360,10 @@ async fn main(spawner: Spawner) {
     println!("DHCP OK");
 
     // 13. MQTT TASK + 14. ACQUISITION TASK
-    spawner.spawn(mqtt_task(stack, peripherals.FLASH).expect("Gagal membuat mqtt_task"));
+    spawner.spawn(
+        mqtt_task(stack, flash_storage)
+            .expect("Gagal membuat mqtt_task")
+    );
 
     spawner.spawn(acquisition_task(acquisition).expect("Gagal membuat acquisition_task"));
 
@@ -512,13 +590,13 @@ async fn acquisition_task(mut acquisition: Acquisition<GasI2c>) {
 #[embassy_executor::task]
 async fn mqtt_task(
     stack: embassy_net::Stack<'static>,
-    flash_periph: esp_hal::peripherals::FLASH<'static>,
+    flash_storage: FlashStorage<'static>,
 ) -> ! {
     println!();
     println!("=== MQTT TASK START ===");
 
     // Peripheral FLASH dipakai OTA (baca state otadata sekarang; tulis slot hanya saat update).
-    let mut ota_dev = OtaDevice::new(flash_periph);
+    let mut ota_dev = OtaDevice::new(flash_storage);
 
     // Identitas sesi baru ditunggu SETELAH pemeriksaan OTA (acquisition_task menunggu
     // OTA_GATE dulu, jadi SESSION_INFO baru dikirim sesudahnya).
