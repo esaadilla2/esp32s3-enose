@@ -1,65 +1,135 @@
+
 // src/provisioning.rs
-// Simple provisioning stub. In a real product this would start an AP and HTTP server
-// to receive SSID/PASSWORD from a user. Here we just provide a placeholder function.
+// Wi-Fi credential storage using ESP-IDF compatible NVS.
 
-use embedded_storage::nor_flash::{NorFlash, ReadNorFlash};
-use esp_println::println; // for debug logs
+extern crate alloc;
 
+use alloc::string::String;
+
+use esp_nvs::{Key, Nvs};
+use esp_println::println;
 use esp_storage::FlashStorage;
 
+use heapless::String as HString;
 
-/// Maximum lengths for SSID and password stored in flash.
+/// Maximum lengths for SSID and password.
 pub const MAX_SSID_LEN: usize = 32;
 pub const MAX_PASS_LEN: usize = 64;
-/// Fixed flash offset for storing Wi‑Fi credentials. Choose an area not used by OTA.
-pub const CRED_FLASH_OFFSET: usize = 0x9000; // use NVS partition area (safe region)
 
-/// Save credentials to flash. Returns true on success.
-use heapless::String as HString; // use heapless string for no_std
+/// NVS partition from partitions.csv.
+pub const CRED_FLASH_OFFSET: usize = 0x9000;
+pub const CRED_FLASH_SIZE: usize = 0x4000;
 
-/// Save credentials to flash. Returns true on success.
-pub fn save_credentials(flash: &mut FlashStorage<'static>, ssid: &HString<32>, pass: &HString<64>) -> bool {
-    let mut buf = [0xFFu8; MAX_SSID_LEN + MAX_PASS_LEN];
-    let ssid_bytes = ssid.as_bytes();
-    let pass_bytes = pass.as_bytes();
-    if ssid_bytes.len() > MAX_SSID_LEN || pass_bytes.len() > MAX_PASS_LEN {
-        println!("Credentials too long for flash storage");
+/// NVS namespace and keys.
+const WIFI_NAMESPACE: Key = Key::from_str("wifi_config");
+const SSID_KEY: Key = Key::from_str("ssid");
+const PASS_KEY: Key = Key::from_str("password");
+
+/// Save Wi-Fi credentials to NVS.
+/// Returns true on success.
+pub fn save_credentials(
+    flash: &mut FlashStorage<'static>,
+    ssid: &HString<32>,
+    pass: &HString<64>,
+) -> bool {
+    if ssid.is_empty()
+        || ssid.len() > MAX_SSID_LEN
+        || pass.len() > MAX_PASS_LEN
+    {
+        println!("[PROVISIONING] Invalid credential length.");
         return false;
     }
-    buf[..ssid_bytes.len()].copy_from_slice(ssid_bytes);
-    buf[MAX_SSID_LEN..MAX_SSID_LEN + pass_bytes.len()].copy_from_slice(pass_bytes);
-    flash
-        .erase(CRED_FLASH_OFFSET as u32, (buf.len()) as u32)
-        .ok()
-        .and_then(|_| flash.write(CRED_FLASH_OFFSET as u32, &buf).ok())
-        .is_some()
+
+    let mut nvs = match Nvs::new(
+        CRED_FLASH_OFFSET,
+        CRED_FLASH_SIZE,
+        &mut *flash,
+    ) {
+        Ok(nvs) => nvs,
+        Err(_) => {
+            println!("[PROVISIONING] Failed to open NVS.");
+            return false;
+        }
+    };
+
+    let result = nvs
+        .set(&WIFI_NAMESPACE, &SSID_KEY, ssid.as_str())
+        .and_then(|_| {
+            nvs.set(&WIFI_NAMESPACE, &PASS_KEY, pass.as_str())
+        });
+
+    drop(nvs);
+
+    match result {
+        Ok(()) => {
+            println!("[PROVISIONING] Wi-Fi credentials saved.");
+            true
+        }
+        Err(_) => {
+            println!("[PROVISIONING] Failed to save credentials.");
+            false
+        }
+    }
 }
 
-/// Load credentials from flash. Returns (ssid, password) if present.
-pub fn load_credentials(flash: &mut FlashStorage<'static>) -> Option<(heapless::String<32>, heapless::String<64>)> {
-    let mut buf = [0xFFu8; MAX_SSID_LEN + MAX_PASS_LEN];
-    if flash.read(CRED_FLASH_OFFSET as u32, &mut buf).is_err() {
+/// Load Wi-Fi credentials from NVS.
+/// Returns None when credentials are unavailable.
+pub fn load_credentials(
+    flash: &mut FlashStorage<'static>,
+) -> Option<(HString<32>, HString<64>)> {
+    let mut nvs = match Nvs::new(
+        CRED_FLASH_OFFSET,
+        CRED_FLASH_SIZE,
+        &mut *flash,
+    ) {
+        Ok(nvs) => nvs,
+        Err(_) => {
+            println!("[PROVISIONING] NVS unavailable or empty.");
+            return None;
+        }
+    };
+
+    let ssid: String = match nvs.get(&WIFI_NAMESPACE, &SSID_KEY) {
+        Ok(value) => value,
+        Err(_) => {
+            println!("[PROVISIONING] SSID not found in NVS.");
+            return None;
+        }
+    };
+
+    let pass: String = match nvs.get(&WIFI_NAMESPACE, &PASS_KEY) {
+        Ok(value) => value,
+        Err(_) => {
+            println!("[PROVISIONING] Password not found in NVS.");
+            return None;
+        }
+    };
+
+    drop(nvs);
+
+    if ssid.is_empty()
+        || ssid.len() > MAX_SSID_LEN
+        || pass.len() > MAX_PASS_LEN
+    {
+        println!("[PROVISIONING] Invalid credentials in NVS.");
         return None;
     }
-    if buf.iter().all(|&b| b == 0xFF) {
-        return None;
-    }
-    let ssid_len = buf.iter().position(|&b| b == 0x00).unwrap_or(MAX_SSID_LEN);
-    let pass_start = MAX_SSID_LEN;
-    let pass_len = buf[pass_start..]
-        .iter()
-        .position(|&b| b == 0x00)
-        .unwrap_or(MAX_PASS_LEN);
-    let mut ssid = heapless::String::<32>::new();
-    ssid.push_str(core::str::from_utf8(&buf[..ssid_len]).ok()?).ok()?;
-    let mut pass = heapless::String::<64>::new();
-    pass.push_str(core::str::from_utf8(&buf[pass_start..pass_start + pass_len]).ok()?).ok()?;
-    Some((ssid, pass))
+
+    let mut ssid_out = HString::<32>::new();
+    let mut pass_out = HString::<64>::new();
+
+    ssid_out.push_str(&ssid).ok()?;
+    pass_out.push_str(&pass).ok()?;
+
+    println!("[PROVISIONING] Wi-Fi credentials loaded from NVS.");
+
+    Some((ssid_out, pass_out))
 }
 
-
-/// Provisioning task placeholder – in real use this would spin up an AP and web UI.
+/// Provisioning task placeholder.
 pub async fn provisioning_task() {
-    println!("[PROVISIONING] No Wi‑Fi credentials stored. Provisioning not implemented in this stub.");
-    // User can flash credentials via the "save_credentials" helper from host side.
+    println!(
+        "[PROVISIONING] NVS storage is ready. \
+         Wi-Fi provisioning interface is not implemented yet."
+    );
 }
