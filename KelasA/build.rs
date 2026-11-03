@@ -1,11 +1,56 @@
+
+use std::fs;
+use std::path::PathBuf;
+
 fn main() {
+    // Generate partitions.bin secara otomatis
+    generate_partition_bin();
+
+    // Fungsi linker bawaan project
     linker_be_nice();
-    // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
+
+    // Pastikan linkall.x menjadi linker script terakhir.
     println!("cargo:rustc-link-arg=-Tlinkall.x");
+}
+
+// Membuat partitions.bin dari partitions.csv
+fn generate_partition_bin() {
+    println!("cargo:rerun-if-changed=partitions.csv");
+
+    let manifest_dir = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR")
+            .expect("CARGO_MANIFEST_DIR tidak ditemukan"),
+    );
+
+    let csv_path = manifest_dir.join("partitions.csv");
+    let bin_path = manifest_dir.join("partitions.bin");
+
+    // Membaca file CSV
+    let csv = fs::read_to_string(&csv_path)
+        .expect("Gagal membaca partitions.csv");
+
+    // Mengubah CSV menjadi partition table
+    let table = esp_idf_part::PartitionTable::try_from_str(csv)
+        .expect("Format partitions.csv tidak valid");
+
+    // Memvalidasi partition table
+    table.validate()
+        .expect("Partition table tidak valid");
+
+    // Mengubah partition table menjadi binary
+    let binary = table.to_bin()
+        .expect("Gagal mengubah partition table menjadi binary");
+
+    // Menyimpan hasil sebagai partitions.bin
+    fs::write(&bin_path, binary)
+        .expect("Gagal membuat partitions.bin");
+
+    println!("cargo:warning=partitions.bin berhasil dibuat!");
 }
 
 fn linker_be_nice() {
     let args: Vec<String> = std::env::args().collect();
+
     if args.len() > 1 {
         let kind = &args[1];
         let what = &args[2];
@@ -54,7 +99,7 @@ fn linker_be_nice() {
                 }
                 _ => (),
             },
-            // we don't have anything helpful for "missing-lib" yet
+            // Tidak ada pesan khusus untuk "missing-lib".
             _ => {
                 std::process::exit(1);
             }
@@ -63,8 +108,6 @@ fn linker_be_nice() {
         std::process::exit(0);
     }
 
-    println!(
-        "cargo:rustc-link-arg=-Wl,--error-handling-script={}",
-        std::env::current_exe().unwrap().display()
-    );
+    // GNU --error-handling-script sengaja tidak digunakan
+    // karena linker yang dipakai adalah rust-lld.
 }
