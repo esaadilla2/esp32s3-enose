@@ -27,7 +27,7 @@ use crate::ota_core::{self, OtaError, Query};
 pub const FW_TITLE: &str = "coffee-enose";
 /// Harus SAMA PERSIS dengan "Version" paket firmware di ThingsBoard.
 /// Naikkan setiap build baru (mis. "2" untuk firmware awal, "3" untuk firmware baru).
-pub const FW_VERSION: &str = "3";
+pub const FW_VERSION: &str = "4";
 
 /// Tipe socket yang dipakai client MQTT (juga dipakai oleh ota_core).
 pub type Sock<'a> = TcpSocket<'a>;
@@ -49,14 +49,15 @@ pub struct OtaDevice {
 
 impl OtaDevice {
     /// Ambil alih peripheral FLASH dan baca state OTA boot ini (hanya membaca).
-    pub fn new(flash_periph: esp_hal::peripherals::FLASH<'static>) -> Self {
-        let mut dev = Self {
-            flash: FlashStorage::new(flash_periph),
-            just_updated: false,
-        };
-        dev.read_boot_state();
-        dev
-    }
+    pub fn new(flash: FlashStorage<'static>) -> Self {
+    let mut dev = Self {
+        flash,
+        just_updated: false,
+    };
+
+    dev.read_boot_state();
+    dev
+}
 
     fn read_boot_state(&mut self) {
         let mut pt = [0u8; PARTITION_TABLE_MAX_LEN];
