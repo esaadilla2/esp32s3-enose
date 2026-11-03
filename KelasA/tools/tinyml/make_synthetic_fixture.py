@@ -12,9 +12,10 @@ import features_ref as fr
 import train_export as te
 
 
-def make_session(rng, amp, n=120):
+def make_session(rng, amp, n=120, base=None):
     t = np.arange(n, dtype=np.float64)
-    base = rng.uniform(0.8, 1.6, size=8)
+    if base is None:
+        base = rng.uniform(0.8, 1.6, size=8)
     tau = rng.uniform(15, 40, size=8)
     gas = base + amp * (1 - np.exp(-t[:, None] / tau)) + rng.normal(0, 0.01, size=(n, 8))
     temp = 25 + rng.normal(0, 0.2, size=n)
@@ -43,16 +44,23 @@ def main():
     ap.add_argument("--out-rs", required=True)
     ap.add_argument("--golden-out", required=True)
     ap.add_argument("--report", default="synthetic_training_report.json")
+    ap.add_argument("--model", default="rf", choices=["rf", "linear"])
     a = ap.parse_args()
 
     rng = np.random.default_rng(1234)
     amps = {"synth_a": rng.uniform(0.0, 0.2, 8), "synth_b": rng.uniform(0.3, 0.6, 8), "synth_c": rng.uniform(-0.3, 0.0, 8)}
     sessions, labels, groups = {}, {}, {}
+    # 8 "biji" sintetis per kelas (group, meniru Coffee_ID), 3 ulangan per biji.
+    # Tiap biji punya baseline sendiri; ulangan satu biji TIDAK boleh terpisah train/test.
     for lab, amp in amps.items():
-        for i in range(12):
-            mid = f"SYN_{lab}_{i:02d}"
-            sessions[mid] = make_session(rng, amp)
-            labels[mid], groups[mid] = lab, mid
+        for gi in range(8):
+            gid = f"SYNCOF_{lab}_{gi:02d}"
+            base = rng.uniform(0.8, 1.6, size=8)
+            gamp = amp + rng.normal(0, 0.12, 8)  # variasi antar-biji: kelas saling tumpang-tindih
+            for rep_i in range(3):
+                mid = f"SYN_{lab}_{gi:02d}_r{rep_i}"
+                sessions[mid] = make_session(rng, gamp, base=base * (1 + rng.normal(0, 0.01, 8)))
+                labels[mid], groups[mid] = lab, gid
 
     # Kasus tepi untuk golden (tidak ikut training):
     e1 = make_session(rng, amps["synth_a"])           # 10% dropout di gas3
@@ -66,9 +74,9 @@ def main():
     if a.csv_dir:
         write_csv(a.csv_dir, sessions, labels, groups)
     rep = te.run(sessions, labels, groups, "synthetic_fixture", "synth-fx-1", a.out_rs, a.report,
-                 note="DATA SINTETIK -- hanya uji pipeline, BUKAN model aroma kopi.",
+                 model=a.model, note="DATA SINTETIK -- hanya uji pipeline, BUKAN model aroma kopi.",
                  extra_golden=extra, golden_out=a.golden_out)
-    print({k: rep[k] for k in ("n_train", "n_test", "train_accuracy", "test_accuracy", "warning")})
+    print({k: rep[k] for k in ("model", "data_provenance", "n_train", "n_test", "pipeline_sanity_check", "warning")})
 
 
 if __name__ == "__main__":

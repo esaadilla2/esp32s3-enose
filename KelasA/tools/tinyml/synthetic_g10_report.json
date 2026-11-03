@@ -1,0 +1,1078 @@
+{
+  "experiment": "g10_rf_feature_stability",
+  "data_provenance": "synthetic_fixture",
+  "feature_spec": "fv1-8gas7-env2",
+  "classes": [
+    "synth_a",
+    "synth_b",
+    "synth_c"
+  ],
+  "n_sessions": 72,
+  "n_groups": 24,
+  "skipped_sessions": [],
+  "grouping": "StratifiedGroupKFold menurut group/Coffee_ID",
+  "leakage_controls": [
+    "split per group",
+    "peringkat fitur dihitung hanya dari training fold",
+    "permutation importance memakai split-dalam pada data training"
+  ],
+  "rf_params": {
+    "n_estimators": 30,
+    "max_depth": 8,
+    "min_samples_leaf": 2,
+    "max_features": "sqrt",
+    "bootstrap": true
+  },
+  "versions": {
+    "numpy": "2.5.3",
+    "scipy": "1.18.1",
+    "sklearn": "1.9.1"
+  },
+  "claims_allowed": "HANYA verifikasi pipeline. Angka di bawah dari data SINTETIK; bukan akurasi/stabilitas fitur kopi.",
+  "pipeline_sanity_check": {
+    "n_seeds": 20,
+    "seeds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "n_splits": 5,
+    "perm_repeats": 5,
+    "rank_stability": {
+      "impurity": {
+        "n_rankings": 100,
+        "n_constant_rankings": 0,
+        "n_pairs": 4950,
+        "spearman_mean": 0.6602839302601564,
+        "spearman_std": 0.0787202688981348,
+        "spearman_min": 0.3177995851859109,
+        "spearman_between_seeds": {
+          "n_rankings": 20,
+          "n_constant_rankings": 0,
+          "n_pairs": 190,
+          "spearman_mean": 0.7747275413950337,
+          "spearman_std": 0.05309223297108318,
+          "spearman_min": 0.6296532679143725
+        }
+      },
+      "permutation": {
+        "n_rankings": 100,
+        "n_constant_rankings": 33,
+        "n_pairs": 2211,
+        "spearman_mean": 0.10897702417828917,
+        "spearman_std": 0.28139287189298806,
+        "spearman_min": -1.0,
+        "spearman_between_seeds": {
+          "n_rankings": 20,
+          "n_constant_rankings": 0,
+          "n_pairs": 190,
+          "spearman_mean": 0.14958565255565437,
+          "spearman_std": 0.23356412068028554,
+          "spearman_min": -0.394388034870995
+        }
+      }
+    },
+    "topk_frequency": {
+      "impurity": {
+        "top5": {
+          "n_features_always_in_topk": 0,
+          "n_features_ever_in_topk": 24,
+          "most_frequent": [
+            {
+              "feature": "gas2_delta_rel",
+              "index": 12,
+              "frequency": 0.9
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 0.66
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 0.61
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.56
+            },
+            {
+              "feature": "gas5_slope",
+              "index": 34,
+              "frequency": 0.35
+            }
+          ]
+        },
+        "top10": {
+          "n_features_always_in_topk": 1,
+          "n_features_ever_in_topk": 29,
+          "most_frequent": [
+            {
+              "feature": "gas2_delta_rel",
+              "index": 12,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 0.89
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 0.88
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.74
+            },
+            {
+              "feature": "gas5_slope",
+              "index": 34,
+              "frequency": 0.63
+            },
+            {
+              "feature": "gas3_slope",
+              "index": 20,
+              "frequency": 0.61
+            },
+            {
+              "feature": "gas3_delta_rel",
+              "index": 19,
+              "frequency": 0.55
+            },
+            {
+              "feature": "gas7_std",
+              "index": 44,
+              "frequency": 0.52
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.51
+            },
+            {
+              "feature": "gas5_delta_rel",
+              "index": 33,
+              "frequency": 0.4
+            }
+          ]
+        },
+        "top15": {
+          "n_features_always_in_topk": 1,
+          "n_features_ever_in_topk": 37,
+          "most_frequent": [
+            {
+              "feature": "gas2_delta_rel",
+              "index": 12,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas3_delta_rel",
+              "index": 19,
+              "frequency": 0.88
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.87
+            },
+            {
+              "feature": "gas3_slope",
+              "index": 20,
+              "frequency": 0.82
+            },
+            {
+              "feature": "gas5_slope",
+              "index": 34,
+              "frequency": 0.79
+            },
+            {
+              "feature": "gas7_std",
+              "index": 44,
+              "frequency": 0.79
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.71
+            },
+            {
+              "feature": "gas5_delta_rel",
+              "index": 33,
+              "frequency": 0.67
+            },
+            {
+              "feature": "gas7_delta_rel",
+              "index": 47,
+              "frequency": 0.67
+            },
+            {
+              "feature": "gas7_slope",
+              "index": 48,
+              "frequency": 0.64
+            },
+            {
+              "feature": "gas5_std",
+              "index": 30,
+              "frequency": 0.51
+            },
+            {
+              "feature": "gas6_std",
+              "index": 37,
+              "frequency": 0.51
+            },
+            {
+              "feature": "gas8_delta_rel",
+              "index": 54,
+              "frequency": 0.5
+            }
+          ]
+        },
+        "top20": {
+          "n_features_always_in_topk": 2,
+          "n_features_ever_in_topk": 47,
+          "most_frequent": [
+            {
+              "feature": "gas2_delta_rel",
+              "index": 12,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas3_slope",
+              "index": 20,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas3_delta_rel",
+              "index": 19,
+              "frequency": 0.94
+            },
+            {
+              "feature": "gas5_slope",
+              "index": 34,
+              "frequency": 0.93
+            },
+            {
+              "feature": "gas7_std",
+              "index": 44,
+              "frequency": 0.93
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.91
+            },
+            {
+              "feature": "gas7_delta_rel",
+              "index": 47,
+              "frequency": 0.84
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.83
+            },
+            {
+              "feature": "gas5_delta_rel",
+              "index": 33,
+              "frequency": 0.83
+            },
+            {
+              "feature": "gas6_delta_rel",
+              "index": 40,
+              "frequency": 0.83
+            },
+            {
+              "feature": "gas7_slope",
+              "index": 48,
+              "frequency": 0.78
+            },
+            {
+              "feature": "gas1_std",
+              "index": 2,
+              "frequency": 0.73
+            },
+            {
+              "feature": "gas6_std",
+              "index": 37,
+              "frequency": 0.72
+            }
+          ]
+        },
+        "top30": {
+          "n_features_always_in_topk": 3,
+          "n_features_ever_in_topk": 58,
+          "most_frequent": [
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas2_delta_rel",
+              "index": 12,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas3_slope",
+              "index": 20,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas5_slope",
+              "index": 34,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas3_delta_rel",
+              "index": 19,
+              "frequency": 0.97
+            },
+            {
+              "feature": "gas7_std",
+              "index": 44,
+              "frequency": 0.97
+            },
+            {
+              "feature": "gas7_delta_rel",
+              "index": 47,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.95
+            },
+            {
+              "feature": "gas6_delta_rel",
+              "index": 40,
+              "frequency": 0.92
+            },
+            {
+              "feature": "gas1_std",
+              "index": 2,
+              "frequency": 0.9
+            },
+            {
+              "feature": "gas5_std",
+              "index": 30,
+              "frequency": 0.9
+            },
+            {
+              "feature": "gas5_delta_rel",
+              "index": 33,
+              "frequency": 0.9
+            },
+            {
+              "feature": "gas7_slope",
+              "index": 48,
+              "frequency": 0.85
+            }
+          ]
+        }
+      },
+      "permutation": {
+        "top5": {
+          "n_features_always_in_topk": 0,
+          "n_features_ever_in_topk": 29,
+          "most_frequent": [
+            {
+              "feature": "gas1_baseline",
+              "index": 0,
+              "frequency": 0.81
+            },
+            {
+              "feature": "gas1_mean",
+              "index": 1,
+              "frequency": 0.8
+            },
+            {
+              "feature": "gas1_std",
+              "index": 2,
+              "frequency": 0.65
+            },
+            {
+              "feature": "gas1_min",
+              "index": 3,
+              "frequency": 0.59
+            },
+            {
+              "feature": "gas1_max",
+              "index": 4,
+              "frequency": 0.44
+            }
+          ]
+        },
+        "top10": {
+          "n_features_always_in_topk": 0,
+          "n_features_ever_in_topk": 39,
+          "most_frequent": [
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas1_baseline",
+              "index": 0,
+              "frequency": 0.89
+            },
+            {
+              "feature": "gas1_mean",
+              "index": 1,
+              "frequency": 0.89
+            },
+            {
+              "feature": "gas1_std",
+              "index": 2,
+              "frequency": 0.87
+            },
+            {
+              "feature": "gas1_min",
+              "index": 3,
+              "frequency": 0.86
+            },
+            {
+              "feature": "gas1_max",
+              "index": 4,
+              "frequency": 0.85
+            },
+            {
+              "feature": "gas2_baseline",
+              "index": 7,
+              "frequency": 0.74
+            },
+            {
+              "feature": "gas2_mean",
+              "index": 8,
+              "frequency": 0.62
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.56
+            }
+          ]
+        },
+        "top15": {
+          "n_features_always_in_topk": 0,
+          "n_features_ever_in_topk": 44,
+          "most_frequent": [
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_baseline",
+              "index": 0,
+              "frequency": 0.97
+            },
+            {
+              "feature": "gas1_mean",
+              "index": 1,
+              "frequency": 0.97
+            },
+            {
+              "feature": "gas1_min",
+              "index": 3,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas1_std",
+              "index": 2,
+              "frequency": 0.95
+            },
+            {
+              "feature": "gas1_max",
+              "index": 4,
+              "frequency": 0.93
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.89
+            },
+            {
+              "feature": "gas2_baseline",
+              "index": 7,
+              "frequency": 0.88
+            },
+            {
+              "feature": "gas2_mean",
+              "index": 8,
+              "frequency": 0.85
+            },
+            {
+              "feature": "gas2_delta_rel",
+              "index": 12,
+              "frequency": 0.83
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 0.83
+            },
+            {
+              "feature": "gas2_min",
+              "index": 10,
+              "frequency": 0.82
+            },
+            {
+              "feature": "gas2_max",
+              "index": 11,
+              "frequency": 0.82
+            },
+            {
+              "feature": "gas3_baseline",
+              "index": 14,
+              "frequency": 0.63
+            }
+          ]
+        },
+        "top20": {
+          "n_features_always_in_topk": 3,
+          "n_features_ever_in_topk": 45,
+          "most_frequent": [
+            {
+              "feature": "gas1_mean",
+              "index": 1,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_min",
+              "index": 3,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_baseline",
+              "index": 0,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_max",
+              "index": 4,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_std",
+              "index": 2,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas2_baseline",
+              "index": 7,
+              "frequency": 0.96
+            },
+            {
+              "feature": "gas2_min",
+              "index": 10,
+              "frequency": 0.94
+            },
+            {
+              "feature": "gas2_std",
+              "index": 9,
+              "frequency": 0.93
+            },
+            {
+              "feature": "gas2_max",
+              "index": 11,
+              "frequency": 0.93
+            },
+            {
+              "feature": "gas2_mean",
+              "index": 8,
+              "frequency": 0.92
+            },
+            {
+              "feature": "gas3_baseline",
+              "index": 14,
+              "frequency": 0.91
+            },
+            {
+              "feature": "gas2_slope",
+              "index": 13,
+              "frequency": 0.89
+            },
+            {
+              "feature": "gas3_mean",
+              "index": 15,
+              "frequency": 0.88
+            }
+          ]
+        },
+        "top30": {
+          "n_features_always_in_topk": 5,
+          "n_features_ever_in_topk": 51,
+          "most_frequent": [
+            {
+              "feature": "gas1_mean",
+              "index": 1,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_min",
+              "index": 3,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_delta_rel",
+              "index": 5,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_slope",
+              "index": 6,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas3_baseline",
+              "index": 14,
+              "frequency": 1.0
+            },
+            {
+              "feature": "gas1_baseline",
+              "index": 0,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas1_max",
+              "index": 4,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas4_baseline",
+              "index": 21,
+              "frequency": 0.99
+            },
+            {
+              "feature": "gas3_mean",
+              "index": 15,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas3_slope",
+              "index": 20,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas4_mean",
+              "index": 22,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas4_max",
+              "index": 25,
+              "frequency": 0.98
+            },
+            {
+              "feature": "gas2_baseline",
+              "index": 7,
+              "frequency": 0.97
+            },
+            {
+              "feature": "gas2_max",
+              "index": 11,
+              "frequency": 0.97
+            },
+            {
+              "feature": "gas3_min",
+              "index": 17,
+              "frequency": 0.97
+            }
+          ]
+        }
+      }
+    },
+    "mean_importance_top10": {
+      "impurity": [
+        {
+          "feature": "gas2_delta_rel",
+          "index": 12,
+          "mean": 0.09572793668732879,
+          "std": 0.027989127352109493
+        },
+        {
+          "feature": "gas1_slope",
+          "index": 6,
+          "mean": 0.07720863405751452,
+          "std": 0.03259177611641202
+        },
+        {
+          "feature": "gas2_slope",
+          "index": 13,
+          "mean": 0.07698773533086542,
+          "std": 0.03513536701089451
+        },
+        {
+          "feature": "gas1_delta_rel",
+          "index": 5,
+          "mean": 0.06627904951500133,
+          "std": 0.03603662172902041
+        },
+        {
+          "feature": "gas5_slope",
+          "index": 34,
+          "mean": 0.05405478980360759,
+          "std": 0.032305850389462376
+        },
+        {
+          "feature": "gas3_slope",
+          "index": 20,
+          "mean": 0.052153280518209666,
+          "std": 0.02928662140040648
+        },
+        {
+          "feature": "gas3_delta_rel",
+          "index": 19,
+          "mean": 0.04354991160431194,
+          "std": 0.021578234159915995
+        },
+        {
+          "feature": "gas7_std",
+          "index": 44,
+          "mean": 0.04103256233625324,
+          "std": 0.01940317552658963
+        },
+        {
+          "feature": "gas2_std",
+          "index": 9,
+          "mean": 0.04090775611173107,
+          "std": 0.02870302908883245
+        },
+        {
+          "feature": "gas5_delta_rel",
+          "index": 33,
+          "mean": 0.03845644189483192,
+          "std": 0.02776763430641411
+        }
+      ],
+      "permutation": [
+        {
+          "feature": "gas1_slope",
+          "index": 6,
+          "mean": 0.016740740740740737,
+          "std": 0.037764994206010045
+        },
+        {
+          "feature": "gas1_delta_rel",
+          "index": 5,
+          "mean": 0.013592592592592599,
+          "std": 0.032794220608970026
+        },
+        {
+          "feature": "gas3_slope",
+          "index": 20,
+          "mean": 0.012444444444444447,
+          "std": 0.03229034943549957
+        },
+        {
+          "feature": "gas2_slope",
+          "index": 13,
+          "mean": 0.006555555555555559,
+          "std": 0.03453732995606098
+        },
+        {
+          "feature": "gas2_delta_rel",
+          "index": 12,
+          "mean": 0.006444444444444443,
+          "std": 0.03837802011547155
+        },
+        {
+          "feature": "gas5_slope",
+          "index": 34,
+          "mean": 0.0042222222222222236,
+          "std": 0.021205248205110196
+        },
+        {
+          "feature": "gas3_delta_rel",
+          "index": 19,
+          "mean": 0.0039259259259259265,
+          "std": 0.02330580386571467
+        },
+        {
+          "feature": "gas4_max",
+          "index": 25,
+          "mean": 0.0031851851851851837,
+          "std": 0.014035229044122778
+        },
+        {
+          "feature": "gas2_std",
+          "index": 9,
+          "mean": 0.003074074074074076,
+          "std": 0.022024148113767628
+        },
+        {
+          "feature": "gas5_std",
+          "index": 30,
+          "mean": 0.001777777777777777,
+          "std": 0.01942577587062053
+        }
+      ]
+    },
+    "channel_importance": {
+      "impurity": [
+        {
+          "channel": "gas1",
+          "sensor": "MQ-6",
+          "mean_importance_sum": 0.17488723824846628
+        },
+        {
+          "channel": "gas2",
+          "sensor": "MQ-135",
+          "mean_importance_sum": 0.237094267164384
+        },
+        {
+          "channel": "gas3",
+          "sensor": "MQ-7",
+          "mean_importance_sum": 0.10560385202397013
+        },
+        {
+          "channel": "gas4",
+          "sensor": "MQ-3",
+          "mean_importance_sum": 0.09970583462315664
+        },
+        {
+          "channel": "gas5",
+          "sensor": "TGS2602",
+          "mean_importance_sum": 0.12847942236367066
+        },
+        {
+          "channel": "gas6",
+          "sensor": "TGS2620",
+          "mean_importance_sum": 0.0891143895747291
+        },
+        {
+          "channel": "gas7",
+          "sensor": "TGS2611",
+          "mean_importance_sum": 0.11292456109689598
+        },
+        {
+          "channel": "gas8",
+          "sensor": "TGS2600",
+          "mean_importance_sum": 0.051862292558926854
+        },
+        {
+          "channel": "env(temp,rh)",
+          "sensor": "DHT22",
+          "mean_importance_sum": 0.0003281423458003981
+        }
+      ],
+      "permutation": [
+        {
+          "channel": "gas1",
+          "sensor": "MQ-6",
+          "mean_importance_sum": 0.029333333333333336
+        },
+        {
+          "channel": "gas2",
+          "sensor": "MQ-135",
+          "mean_importance_sum": 0.010259259259259263
+        },
+        {
+          "channel": "gas3",
+          "sensor": "MQ-7",
+          "mean_importance_sum": 0.010333333333333338
+        },
+        {
+          "channel": "gas4",
+          "sensor": "MQ-3",
+          "mean_importance_sum": 0.005592592592592589
+        },
+        {
+          "channel": "gas5",
+          "sensor": "TGS2602",
+          "mean_importance_sum": 0.006037037037037039
+        },
+        {
+          "channel": "gas6",
+          "sensor": "TGS2620",
+          "mean_importance_sum": -0.007037037037037035
+        },
+        {
+          "channel": "gas7",
+          "sensor": "TGS2611",
+          "mean_importance_sum": -0.0012592592592592555
+        },
+        {
+          "channel": "gas8",
+          "sensor": "TGS2600",
+          "mean_importance_sum": -0.0004814814814814823
+        },
+        {
+          "channel": "env(temp,rh)",
+          "sensor": "DHT22",
+          "mean_importance_sum": 0.0003333333333333335
+        }
+      ]
+    },
+    "impurity_vs_permutation_spearman": {
+      "mean": 0.22048734081206112,
+      "std": 0.2561010165709242,
+      "n": 67,
+      "n_undefined_permutation_all_zero": 33
+    },
+    "feature_reduction": {
+      "impurity": [
+        {
+          "k": 5,
+          "accuracy_mean": 0.9566666666666668,
+          "accuracy_std_over_seeds": 0.030239782480111273,
+          "balanced_accuracy_mean": 0.9622222222222223,
+          "balanced_accuracy_std_over_seeds": 0.02519063121945476
+        },
+        {
+          "k": 10,
+          "accuracy_mean": 0.9800000000000001,
+          "accuracy_std_over_seeds": 0.027487370837451085,
+          "balanced_accuracy_mean": 0.9816666666666667,
+          "balanced_accuracy_std_over_seeds": 0.027278852660424267
+        },
+        {
+          "k": 15,
+          "accuracy_mean": 0.9916666666666668,
+          "accuracy_std_over_seeds": 0.013478377746103823,
+          "balanced_accuracy_mean": 0.9933333333333334,
+          "balanced_accuracy_std_over_seeds": 0.010772621905369583
+        },
+        {
+          "k": 20,
+          "accuracy_mean": 0.9906666666666666,
+          "accuracy_std_over_seeds": 0.01691810338726603,
+          "balanced_accuracy_mean": 0.9905555555555555,
+          "balanced_accuracy_std_over_seeds": 0.019333014045894784
+        },
+        {
+          "k": 30,
+          "accuracy_mean": 0.9966666666666667,
+          "accuracy_std_over_seeds": 0.010219806477837262,
+          "balanced_accuracy_mean": 0.9972222222222221,
+          "balanced_accuracy_std_over_seeds": 0.008516505398197685
+        },
+        {
+          "k": 58,
+          "accuracy_mean": 0.9933333333333334,
+          "accuracy_std_over_seeds": 0.013662601021279468,
+          "balanced_accuracy_mean": 0.9933333333333334,
+          "balanced_accuracy_std_over_seeds": 0.013788526273323156
+        }
+      ],
+      "permutation": [
+        {
+          "k": 5,
+          "accuracy_mean": 0.8376666666666669,
+          "accuracy_std_over_seeds": 0.08085034185319057,
+          "balanced_accuracy_mean": 0.8405555555555555,
+          "balanced_accuracy_std_over_seeds": 0.08565470445376441
+        },
+        {
+          "k": 10,
+          "accuracy_mean": 0.9765000000000003,
+          "accuracy_std_over_seeds": 0.020013190094979316,
+          "balanced_accuracy_mean": 0.9799999999999999,
+          "balanced_accuracy_std_over_seeds": 0.016703662642636587
+        },
+        {
+          "k": 15,
+          "accuracy_mean": 0.9560000000000001,
+          "accuracy_std_over_seeds": 0.039350278835663235,
+          "balanced_accuracy_mean": 0.96,
+          "balanced_accuracy_std_over_seeds": 0.03691832827963592
+        },
+        {
+          "k": 20,
+          "accuracy_mean": 0.9746666666666668,
+          "accuracy_std_over_seeds": 0.02548201980482186,
+          "balanced_accuracy_mean": 0.9794444444444445,
+          "balanced_accuracy_std_over_seeds": 0.02026826260772745
+        },
+        {
+          "k": 30,
+          "accuracy_mean": 0.9848333333333334,
+          "accuracy_std_over_seeds": 0.018119204054139804,
+          "balanced_accuracy_mean": 0.9861111111111113,
+          "balanced_accuracy_std_over_seeds": 0.015265146293371184
+        },
+        {
+          "k": 58,
+          "accuracy_mean": 0.9933333333333334,
+          "accuracy_std_over_seeds": 0.013662601021279468,
+          "balanced_accuracy_mean": 0.9933333333333334,
+          "balanced_accuracy_std_over_seeds": 0.013788526273323156
+        }
+      ]
+    }
+  },
+  "real_dataset_evaluation": null
+}

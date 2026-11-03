@@ -7,18 +7,18 @@
 
 use core::fmt::Write;
 
-use super::inference::MlOutcome;
-use super::model::{LinearSoftmaxModel, ModelKind};
+use super::inference::{Classifier, MlOutcome};
+use super::model::ModelKind;
 
 /// Tulis JSON ke `w`. `measurement_id`/`data_mode` harus ASCII aman JSON
 /// (dibangun firmware dari angka & konstanta). Label/versi model sudah
 /// divalidasi hanya [A-Za-z0-9_-] oleh `LinearSoftmaxModel::validate()`;
 /// kalau model tidak valid, versi/label TIDAK dicetak.
-pub fn write_ml_json<W: Write>(
+pub fn write_ml_json<W: Write, M: Classifier>(
     w: &mut W,
     measurement_id: &str,
     data_mode: &str,
-    model: &LinearSoftmaxModel,
+    model: &M,
     outcome: &MlOutcome,
     n_frames: u32,
 ) -> core::fmt::Result {
@@ -31,11 +31,11 @@ pub fn write_ml_json<W: Write>(
         data_mode,
         n_frames
     )?;
-    if model.kind == ModelKind::SyntheticFixture {
+    if model.kind() == ModelKind::SyntheticFixture {
         w.write_str(",\"synthetic\":true")?;
     }
     if model_ok {
-        write!(w, ",\"model_version\":\"{}\"", model.version)?;
+        write!(w, ",\"model_version\":\"{}\"", model.version())?;
     }
     if let Some(p) = outcome.prediction {
         write!(

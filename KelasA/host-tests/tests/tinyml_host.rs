@@ -46,6 +46,28 @@ fn test_model(kind: ModelKind, w0: f32) -> LinearSoftmaxModel {
     }
 }
 
+// ---------------------------------------------------------------- Random Forest helpers
+/// Hutan UJI buatan tangan (bukan model kopi): 2 kelas, 2 pohon.
+///  T0: fitur#1 <= 5.0 ? daun0 [1,0] : daun1 [0,1]     T1: satu daun [0.25,0.75]
+/// `shift` menggeser threshold (untuk tes fuzz).
+fn rf_hand(shift: f32) -> RandomForestModel {
+    let nodes: &'static [ForestNode] = Box::leak(Box::new([
+        nd(1, 5.0 + shift, 1, 2), // 0: akar T0
+        lf(0),                    // 1
+        lf(1),                    // 2
+        lf(2),                    // 3: akar T1 (daun tunggal)
+    ]));
+    RandomForestModel {
+        kind: ModelKind::Trained,
+        version: "rf-test",
+        feature_spec: FEATURE_SPEC,
+        labels: Box::leak(Box::new(["pos", "neg"])),
+        roots: Box::leak(Box::new([0u16, 3])),
+        nodes,
+        leaf_probs: leak_f32(std::vec![1.0, 0.0, 0.0, 1.0, 0.25, 0.75]),
+    }
+}
+
 fn close(a: f64, b: f64, rel: f64, abs: f64) -> bool {
     (a - b).abs() <= abs + rel * b.abs()
 }
@@ -251,7 +273,8 @@ fn predict_never_panics_on_extreme_inputs() {
             };
         }
         let _ = predict(&x, &m); // tidak boleh panic
-        let _ = predict(&x, &MODEL);
+        let _ = MODEL.predict(&x);
+        let _ = predict_forest(&x, &rf_hand(0.0));
     }
 }
 
@@ -285,11 +308,120 @@ fn classify_session_status_rules() {
     assert_eq!((o.status, o.prediction), (MlStatus::ModelInvalid, None));
 }
 
+// ---------------------------------------------------------------- Random Forest
+#[test]
+fn forest_hand_built_matches_manual_computation() {
+    let m = rf_hand(0.0);
+    assert!(m.validate().is_ok());
+    let mut x: FeatureVector = [0.0; FEATURE_COUNT];
+    x[1] = 3.0; // T0 -> [1,0]; T1 -> [.25,.75]  => [.625,.375]
+    let p = m.predict(&x).unwrap();
+    assert_eq!((p.class_index, p.label), (0, "pos"));
+    assert!(close(p.score as f64, 0.625, 1e-7, 0.0), "{}", p.score);
+    x[1] = 5.0; // batas: x <= thr -> kiri (sama dengan sklearn)
+    assert_eq!(m.predict(&x).unwrap().class_index, 0);
+    x[1] = 5.000001;
+    let p = m.predict(&x).unwrap(); // T0 -> [0,1] => [.125,.875]
+    assert_eq!((p.class_index, p.label), (1, "neg"));
+    assert!(close(p.score as f64, 0.875, 1e-6, 0.0), "{}", p.score);
+}
+
+#[test]
+fn forest_invalid_structure_is_rejected_never_followed() {
+    let base = rf_hand(0.0);
+    let mk = |nodes: Vec<ForestNode>, roots: Vec<u16>, probs: Vec<f32>| RandomForestModel {
+        nodes: Box::leak(nodes.into_boxed_slice()),
+        roots: Box::leak(roots.into_boxed_slice()),
+        leaf_probs: leak_f32(probs),
+        ..rf_hand(0.0)
+    };
+    let probs = || std::vec![1.0, 0.0, 0.0, 1.0, 0.25, 0.75];
+    // siklus: anak menunjuk ke induk / dirinya sendiri
+    assert_eq!(mk(std::vec![nd(1, 5.0, 0, 2), lf(0), lf(1), lf(2)], std::vec![0, 3], probs()).validate(), Err(ModelError::BadStructure));
+    // anak di luar array
+    assert_eq!(mk(std::vec![nd(1, 5.0, 1, 9), lf(0), lf(1), lf(2)], std::vec![0, 3], probs()).validate(), Err(ModelError::BadStructure));
+    // indeks daun di luar leaf_probs
+    assert_eq!(mk(std::vec![nd(1, 5.0, 1, 2), lf(0), lf(7), lf(2)], std::vec![0, 3], probs()).validate(), Err(ModelError::BadStructure));
+    // fitur di luar 58
+    assert_eq!(mk(std::vec![nd(58, 5.0, 1, 2), lf(0), lf(1), lf(2)], std::vec![0, 3], probs()).validate(), Err(ModelError::BadStructure));
+    // akar di luar array
+    assert_eq!(mk(std::vec![nd(1, 5.0, 1, 2), lf(0), lf(1), lf(2)], std::vec![0, 4], probs()).validate(), Err(ModelError::BadStructure));
+    // tanpa pohon
+    assert_eq!(mk(std::vec![nd(1, 5.0, 1, 2), lf(0), lf(1), lf(2)], std::vec![], probs()).validate(), Err(ModelError::BadStructure));
+    // threshold NaN
+    assert_eq!(mk(std::vec![nd(1, f32::NAN, 1, 2), lf(0), lf(1), lf(2)], std::vec![0, 3], probs()).validate(), Err(ModelError::NonFiniteParam));
+    // probabilitas di luar [0,1] / ukuran tidak kelipatan K
+    assert_eq!(mk(std::vec![nd(1, 5.0, 1, 2), lf(0), lf(1), lf(2)], std::vec![0, 3], std::vec![1.0, 0.0, 0.0, 1.0, 2.0, 0.75]).validate(), Err(ModelError::NonFiniteParam));
+    assert_eq!(mk(std::vec![nd(1, 5.0, 1, 2), lf(0), lf(1), lf(2)], std::vec![0, 3], std::vec![1.0, 0.0, 0.0]).validate(), Err(ModelError::BadDimensions));
+    // spec / label salah
+    let mut bad = rf_hand(0.0);
+    bad.feature_spec = "other";
+    assert_eq!(bad.validate(), Err(ModelError::SpecMismatch));
+    let mut bad = rf_hand(0.0);
+    bad.labels = Box::leak(Box::new(["ok", "ba\"d"]));
+    assert_eq!(bad.validate(), Err(ModelError::BadLabel));
+    // predict menolak model rusak & input non-finite
+    let x: FeatureVector = [1.0; FEATURE_COUNT];
+    let broken = mk(std::vec![nd(1, 5.0, 0, 2), lf(0), lf(1), lf(2)], std::vec![0, 3], probs());
+    assert!(matches!(broken.predict(&x), Err(PredictError::Model(ModelError::BadStructure))));
+    let mut nan = x;
+    nan[0] = f32::NAN;
+    assert_eq!(base.predict(&nan), Err(PredictError::NonFiniteInput));
+}
+
+#[test]
+fn forest_classify_session_status_rules() {
+    let rf = rf_hand(0.0);
+    let fv: FeatureVector = [1.0; FEATURE_COUNT];
+    let o = classify_session(Ok(fv), &rf, false);
+    assert_eq!(o.status, MlStatus::Ok);
+    assert!(o.prediction.is_some());
+    assert_eq!(classify_session(Ok(fv), &rf, true).status, MlStatus::IntegrationTestOnly);
+    let mut syn = rf_hand(0.0);
+    syn.kind = ModelKind::SyntheticFixture;
+    assert_eq!(classify_session(Ok(fv), &syn, false).status, MlStatus::IntegrationTestOnly);
+    let o = classify_session(Err(FeatureError::InsufficientValidEnv), &rf, false);
+    assert_eq!((o.status, o.prediction), (MlStatus::InsufficientData, None));
+    let mut bad = rf_hand(0.0);
+    bad.feature_spec = "x";
+    let o = classify_session(Ok(fv), &bad, false);
+    assert_eq!((o.status, o.prediction), (MlStatus::ModelInvalid, None));
+}
+
+#[test]
+fn forest_telemetry_json_shape() {
+    let rf = rf_hand(0.0);
+    let fv: FeatureVector = [1.0; FEATURE_COUNT];
+    let o = classify_session(Ok(fv), &rf, false);
+    let mut w = W(String::new());
+    write_ml_json(&mut w, "X1", "hardware", &rf, &o, 300).unwrap();
+    std::println!("JSON_RF={}", w.0);
+    assert!(json_shape_ok(&w.0));
+    for k in ["\"ml_status\":\"ok\"", "\"model_version\":\"rf-test\"", "\"predicted_class\":\"", "\"prediction_score\":"] {
+        assert!(w.0.contains(k), "{k}: {}", w.0);
+    }
+}
+
+/// Paritas prediksi Python (struktur ekspor, float32, urutan akumulasi sama) <-> Rust,
+/// atas vektor fitur langsung (data asli + varian terjitter) -- menjangkau banyak cabang pohon.
+#[test]
+fn python_rust_prediction_parity_on_feature_vectors() {
+    assert!(!golden_data::PARITY.is_empty());
+    let mut classes = std::collections::BTreeSet::new();
+    for (i, v) in golden_data::PARITY.iter().enumerate() {
+        let p = MODEL.predict(&v.x).unwrap();
+        assert_eq!(p.class_index, v.class_index, "PARITY#{i} kelas");
+        assert!(close(p.score as f64, v.score, 1e-6, 1e-6), "PARITY#{i} skor rust={} py={}", p.score, v.score);
+        classes.insert(p.class_index);
+    }
+    std::println!("PARITY vektor={} kelas_terprediksi={}", golden_data::PARITY.len(), classes.len());
+}
+
 // ---------------------------------------------------------------- golden (Python <-> Rust)
 #[test]
 fn golden_python_reference_matches_firmware() {
     assert_eq!(golden_data::GOLDEN_FEATURE_SPEC, FEATURE_SPEC);
-    assert!(MODEL.validate().is_ok());
+    assert!(Classifier::validate(&MODEL).is_ok());
     assert!(!golden_data::GOLDEN.is_empty());
     let (mut n_ok, mut n_err) = (0, 0);
     for s in golden_data::GOLDEN {
@@ -316,7 +448,7 @@ fn golden_python_reference_matches_firmware() {
             for (i, (a, b)) in f.iter().zip(s.features.iter()).enumerate() {
                 assert!(close(*a as f64, *b, 1e-4, 1e-5), "{} fitur#{i}: rust={a} py={b}", s.name);
             }
-            let p = predict(&f, &MODEL).unwrap();
+            let p = MODEL.predict(&f).unwrap();
             assert_eq!(p.class_index, s.class_index, "{} kelas", s.name);
             assert!(close(p.score as f64, s.score, 1e-3, 1e-4), "{} skor rust={} py={}", s.name, p.score, s.score);
         } else {
@@ -411,7 +543,7 @@ fn telemetry_fits_mqtt_packet_limit_worst_case() {
 fn ram_footprint_is_small_and_fixed() {
     let acc = core::mem::size_of::<FeatureAccumulator>();
     let fv = core::mem::size_of::<FeatureVector>();
-    let flash_params = (MODEL.weights.len() + MODEL.bias.len() + MODEL.mean.len() + MODEL.std.len()) * 4;
+    let flash_params = MODEL.flash_bytes();
     std::println!("FeatureAccumulator={acc} B, FeatureVector={fv} B, parameter model(flash)={flash_params} B");
     assert!(acc <= 1024, "akumulator {acc} B");
     assert_eq!(fv, FEATURE_COUNT * 4);

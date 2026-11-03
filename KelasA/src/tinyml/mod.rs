@@ -6,8 +6,8 @@
 //! MeasurementSample (acquisition) -> FeatureFrame (8 gas + suhu/RH + status valid)
 //!   -> FeatureAccumulator::push()      [streaming, O(1) RAM, tiap detik]
 //!   -> FeatureAccumulator::finalize()  [58 fitur, setelah sesi selesai]
-//!   -> normalisasi z-score (parameter dari training, model_params.rs)
-//!   -> LinearSoftmaxModel -> kelas + skor
+//!   -> RandomForestModel (model_params.rs, fitur mentah) -> kelas + skor (fraksi suara)
+//!      [jalur linear softmax lama tetap tersedia lewat trait Classifier]
 //!   -> JSON telemetry terpisah (MQTT)
 //! ```
 //!
@@ -23,5 +23,3 @@ pub mod mathx;
 pub mod model;
 pub mod model_params;
 pub mod telemetry;
-pub mod model_rf;
-pub mod inference_rf;

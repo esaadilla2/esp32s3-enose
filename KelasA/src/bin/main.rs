@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 // ============================================================================
 // ESP32-S3 -> Wi-Fi -> DHCP -> DNS -> MQTT THINGSBOARD CLOUD
 // ============================================================================
@@ -19,10 +21,17 @@
 //                        Sample dari Channel ke v1/devices/me/telemetry
 //                        (QoS 0), menyertakan measurement_id + data_mode.
 //
+// OTA (src/ota.rs + src/ota_core.rs): SEKALI per boot, di dalam mqtt_task tepat setelah
+// MQTT CONNECT berhasil dan SEBELUM sesi akuisisi dimulai. Memakai koneksi MQTT yang sama
+// (tidak ada koneksi kedua). acquisition_task menunggu OTA_GATE supaya update/reboot tidak
+// memotong pengukuran 300 sample.
+//
 // TinyML (src/tinyml): fitur disuap per detik di Acquisition::run_session();
 // setelah sesi selesai acquisition_task menjalankan inference SEKALI dan
 // mengirim JSON hasilnya lewat ML_RESULT. mqtt_task mem-publish JSON itu
 // sebagai pesan TERPISAH (bukan field tambahan di payload per-sample).
+
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_executor::Spawner;
 use embassy_mqtt_lite::{ConnectOptions, MqttClient};
@@ -57,15 +66,17 @@ use esp32s3_test::tinyml::model_params::MODEL;
 use esp32s3_test::tinyml::telemetry::write_ml_json;
 
 use esp32s3_test::drivers::dht22::Dht22;
+use esp32s3_test::ota::{OtaDevice, Outcome};
 
 use heapless::String as HString;
 use static_cell::StaticCell;
+use alloc::string::ToString;
 
 // ============================================================================
 // KONFIGURASI
 // ============================================================================
 
-use esp32s3_test::config::{TB_ACCESS_TOKEN, WIFI_PASSWORD, WIFI_SSID};
+use esp32s3_test::config::{TB_ACCESS_TOKEN, WIFI_NETWORKS};
 
 // ThingsBoard Cloud. Hostname di-resolve via DNS setiap kali (re)connect.
 const TB_HOST: &str = "mqtt.thingsboard.cloud";
@@ -103,6 +114,27 @@ type MlJson = HString<256>;
 static ML_RESULT: Signal<CriticalSectionRawMutex, MlJson> = Signal::new();
 
 // ============================================================================
+// OTA GATE
+// ============================================================================
+
+// Fase OTA di boot ini. Diubah dengan compare_exchange supaya mqtt_task dan
+// acquisition_task tidak pernah sama-sama "menang":
+//   PENDING -> RUNNING : mqtt_task mulai memeriksa/mengunduh (acquisition harus menunggu)
+//   PENDING -> DONE    : acquisition menyerah menunggu (jaringan tidak ada); OTA dimatikan
+//   RUNNING -> DONE    : pemeriksaan selesai/gagal tanpa reboot
+const OTA_PENDING: u32 = 0;
+const OTA_RUNNING: u32 = 1;
+const OTA_DONE: u32 = 2;
+static OTA_PHASE: AtomicU32 = AtomicU32::new(OTA_PENDING);
+
+/// Dibunyikan mqtt_task saat keputusan OTA sudah final (tidak ada update / gagal).
+static OTA_GATE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+/// Lama acquisition menunggu koneksi MQTT + pemeriksaan OTA sebelum memulai sesi tanpa OTA.
+/// Hanya berlaku selama fase PENDING; unduhan yang sedang berjalan (RUNNING) selalu ditunggu.
+const OTA_GATE_TIMEOUT_S: u64 = 30;
+
+// ============================================================================
 // PANIC HANDLER
 // ============================================================================
 
@@ -119,6 +151,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 #[esp_rtos::main]
 async fn main(spawner: Spawner) {
+    println!("*** FIRMWARE V3 ***");
     // 1. ESP HAL INIT
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -177,17 +210,6 @@ async fn main(spawner: Spawner) {
 
     println!("Wi-Fi controller initialized");
 
-    // 7. STATION CONFIG (set_config() sendiri yang men-(re)start controller)
-    let sta_config = WifiConfig::Station(
-        StationConfig::default()
-            .with_ssid(WIFI_SSID)
-            .with_password(WIFI_PASSWORD.into()),
-    );
-
-    controller
-        .set_config(&sta_config)
-        .expect("Gagal set konfigurasi Wi-Fi (set_config)");
-
     // Seed acak untuk stack IP (bukan untuk keamanan kriptografis).
     let rng = Rng::new();
     let net_seed = ((rng.random() as u64) << 32) | rng.random() as u64;
@@ -207,17 +229,50 @@ async fn main(spawner: Spawner) {
     // 9. NET TASK
     spawner.spawn(net_task(runner).expect("Gagal membuat net_task"));
 
-    // 10. CONNECT WIFI (satu-satunya connect_async())
-    println!("Menghubungkan ke access point \"{}\"...", WIFI_SSID);
-    println!("Sebelum connect_async()");
+    // 7. WIFI CREDENTIALS + MULTI-NETWORK FALLBACK
+    // Prioritas utama mengikuti urutan WIFI_NETWORKS di config.rs.
+    // Kredensial Wi-Fi diambil dari WIFI_NETWORKS pada config.rs.
+    // FLASH tidak dipakai di sini agar ownership peripherals.FLASH tetap
+    // tersedia untuk mqtt_task dan OtaDevice.
+    let mut connected_ssid: Option<HString<32>> = None;
 
-    controller
-        .connect_async()
-        .await
-        .expect("Gagal konek ke access point - cek SSID/password");
+    // Percobaan awal: jaringan utama lalu seluruh jaringan cadangan.
+    for (index, &(ssid, password)) in WIFI_NETWORKS.iter().enumerate() {
+        println!("Percobaan Wi-Fi {}/{}", index + 1, WIFI_NETWORKS.len());
+        if try_wifi_network(&mut controller, ssid, password).await {
+            match HString::<32>::try_from(ssid) {
+                Ok(value) => {
+                    connected_ssid = Some(value);
+                    break;
+                }
+                Err(_) => println!("SSID melebihi kapasitas 32 karakter: {}", ssid),
+            }
+        }
+    }
 
-    println!("Sesudah connect_async()");
-    println!("Wi-Fi connected");
+    // Provisioning project saat ini masih STUB (belum ada AP/captive portal).
+    // Jika seluruh jaringan gagal, firmware mengulang daftar setiap 15 detik.
+    while connected_ssid.is_none() {
+        println!("Semua Wi-Fi gagal. Retry seluruh daftar dalam 15 detik...");
+        Timer::after(Duration::from_secs(15)).await;
+
+        for (index, &(ssid, password)) in WIFI_NETWORKS.iter().enumerate() {
+            println!("Retry Wi-Fi {}/{}", index + 1, WIFI_NETWORKS.len());
+            if try_wifi_network(&mut controller, ssid, password).await {
+                match HString::<32>::try_from(ssid) {
+                    Ok(value) => {
+                        connected_ssid = Some(value);
+                        break;
+                    }
+                    Err(_) => println!("SSID melebihi kapasitas 32 karakter: {}", ssid),
+                }
+            }
+        }
+
+    }
+
+    let wifi_ssid = connected_ssid.expect("Wi-Fi harus berhasil sebelum lanjut");
+    println!("Wi-Fi connected: {}", wifi_ssid.as_str());
 
     // 11. DHCP
     println!("Menunggu DHCP...");
@@ -230,13 +285,45 @@ async fn main(spawner: Spawner) {
     println!("DHCP OK");
 
     // 13. MQTT TASK + 14. ACQUISITION TASK
-    spawner.spawn(mqtt_task(stack).expect("Gagal membuat mqtt_task"));
+    spawner.spawn(mqtt_task(stack, peripherals.FLASH).expect("Gagal membuat mqtt_task"));
 
     spawner.spawn(acquisition_task(acquisition).expect("Gagal membuat acquisition_task"));
 
     // 15. IDLE
     loop {
         Timer::after(Duration::from_secs(3600)).await;
+    }
+}
+
+// Coba satu access point. set_config() mengganti konfigurasi station sebelum
+// connect_async() dijalankan. Mengembalikan true hanya jika koneksi berhasil.
+async fn try_wifi_network(
+    controller: &mut esp_radio::wifi::WifiController<'_>,
+    ssid: &str,
+    password: &str,
+) -> bool {
+    println!("Menghubungkan ke Wi-Fi: {}", ssid);
+
+    let station_config = WifiConfig::Station(
+        StationConfig::default()
+            .with_ssid(ssid.to_string())
+            .with_password(password.to_string()),
+    );
+
+    if let Err(error) = controller.set_config(&station_config) {
+        println!("Gagal menerapkan konfigurasi Wi-Fi {}: {:?}", ssid, error);
+        return false;
+    }
+
+    match controller.connect_async().await {
+        Ok(_) => {
+            println!("Berhasil terhubung ke Wi-Fi: {}", ssid);
+            true
+        }
+        Err(error) => {
+            println!("Gagal terhubung ke Wi-Fi {}: {:?}", ssid, error);
+            false
+        }
     }
 }
 
@@ -257,6 +344,27 @@ async fn net_task(mut runner: Runner<'static, esp_radio::wifi::Interface<'static
 /// penanganan error) ada di `Acquisition::run_session()` (acquisition.rs).
 #[embassy_executor::task]
 async fn acquisition_task(mut acquisition: Acquisition<GasI2c>) {
+    // Tunggu keputusan OTA (maks OTA_GATE_TIMEOUT_S bila jaringan/cloud tidak tersedia).
+    // Sesi tidak boleh dimulai sebelum itu: update menulis flash dan me-reboot perangkat.
+    loop {
+        match with_timeout(Duration::from_secs(OTA_GATE_TIMEOUT_S), OTA_GATE.wait()).await {
+            Ok(()) => break,
+            Err(_) => match OTA_PHASE.compare_exchange(
+                OTA_PENDING,
+                OTA_DONE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    println!("OTA: cloud tidak terjangkau dalam {} s -- sesi dimulai tanpa OTA", OTA_GATE_TIMEOUT_S);
+                    break;
+                }
+                Err(OTA_RUNNING) => continue, // unduhan berjalan: tunggu sampai selesai/reboot
+                Err(_) => break,
+            },
+        }
+    }
+
     let config = SessionConfig {
         heating_s: 0,
         duration_s: 300,
@@ -402,16 +510,19 @@ async fn acquisition_task(mut acquisition: Acquisition<GasI2c>) {
 // ============================================================================
 
 #[embassy_executor::task]
-async fn mqtt_task(stack: embassy_net::Stack<'static>) -> ! {
+async fn mqtt_task(
+    stack: embassy_net::Stack<'static>,
+    flash_periph: esp_hal::peripherals::FLASH<'static>,
+) -> ! {
     println!();
     println!("=== MQTT TASK START ===");
 
-    println!("Menunggu session info (measurement_id/data_mode) dari acquisition_task...");
-    let session_info = SESSION_INFO.wait().await;
-    println!(
-        "Session info diterima: measurement_id={}, data_mode={}",
-        session_info.measurement_id, session_info.data_mode
-    );
+    // Peripheral FLASH dipakai OTA (baca state otadata sekarang; tulis slot hanya saat update).
+    let mut ota_dev = OtaDevice::new(flash_periph);
+
+    // Identitas sesi baru ditunggu SETELAH pemeriksaan OTA (acquisition_task menunggu
+    // OTA_GATE dulu, jadi SESSION_INFO baru dikirim sesudahnya).
+    let mut session_info: Option<SessionInfo> = None;
 
     let mut json_buf: HString<384> = HString::new();
     let mut pending: Option<MeasurementSample> = None;
@@ -446,7 +557,8 @@ async fn mqtt_task(stack: embassy_net::Stack<'static>) -> ! {
         println!("DNS resolved");
         println!("Connecting to ThingsBoard...");
 
-        let mut rx_buffer = [0u8; 2048];
+        // rx 4 KiB: chunk firmware OTA berukuran 4 KiB (lebih besar = unduhan lebih cepat).
+        let mut rx_buffer = [0u8; 4096];
         let mut tx_buffer = [0u8; 2048];
 
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
@@ -478,6 +590,42 @@ async fn mqtt_task(stack: embassy_net::Stack<'static>) -> ! {
         }
 
         println!("MQTT connected");
+
+        // ---- OTA: SEKALI per boot, hanya selama fase PENDING (sebelum sesi akuisisi) ----
+        if OTA_PHASE
+            .compare_exchange(OTA_PENDING, OTA_RUNNING, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            println!("OTA: memeriksa firmware di ThingsBoard...");
+            let rid = (embassy_time::Instant::now().as_millis() % 1_000_000) as u32 + 1;
+            // Bila ada update: fungsi ini mengunduh, memverifikasi, mengaktifkan slot, lalu
+            // reboot (tidak kembali). Bila tidak ada / gagal: kembali ke sini.
+            let outcome = ota_dev.check_and_update(&mut client, rid).await;
+            OTA_PHASE.store(OTA_DONE, Ordering::Release);
+            OTA_GATE.signal(());
+            if let Outcome::Failed(e) = outcome {
+                println!("OTA: tidak ada pembaruan ({}). Melanjutkan operasi normal.", e.as_str());
+                if e.connection_suspect() {
+                    // Aliran MQTT mungkin tidak sinkron (receive() tidak aman dibatalkan):
+                    // sambung ulang. OTA tidak diulang di boot yang sama.
+                    Timer::after(Duration::from_secs(3)).await;
+                    continue;
+                }
+            }
+        }
+
+        if session_info.is_none() {
+            println!("Menunggu session info (measurement_id/data_mode) dari acquisition_task...");
+            let info = SESSION_INFO.wait().await;
+            println!(
+                "Session info diterima: measurement_id={}, data_mode={}",
+                info.measurement_id, info.data_mode
+            );
+            session_info = Some(info);
+        }
+        let Some(session_info) = session_info.as_ref() else {
+            continue;
+        };
 
         loop {
             let sample = match pending.take() {
