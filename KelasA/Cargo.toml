@@ -86,6 +86,3 @@ opt-level = "s"
 
 [build-dependencies]
 esp-idf-part = "0.6"
-
-opt-level = "s"
-
